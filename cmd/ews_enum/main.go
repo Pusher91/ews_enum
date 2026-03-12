@@ -36,6 +36,9 @@ func main() {
 	seen := make(map[string]ews.Contact)
 	requestCount := 0
 	chars := "abcdefghijklmnopqrstuvwxyz"
+	topLevelPrefixes := chars + "0123456789"
+	currentTopLevel := 0
+	totalTopLevel := len(topLevelPrefixes)
 
 	var enumerate func(prefix string, currentDepth int)
 	enumerate = func(prefix string, currentDepth int) {
@@ -48,7 +51,7 @@ func main() {
 		}
 
 		requestCount++
-		fmt.Fprintf(os.Stderr, "\r[*] Resolving prefix: %-6s (found: %d, requests: %d)", prefix, len(seen), requestCount)
+		fmt.Fprintf(os.Stderr, "\r[*] [%d/%d] Resolving prefix: %-6s (found: %d, requests: %d)", currentTopLevel, totalTopLevel, prefix, len(seen), requestCount)
 
 		contacts, truncated, err := ews.ResolveNames(client, *url, *user, *pass, prefix)
 		if err != nil {
@@ -84,12 +87,8 @@ func main() {
 	fmt.Fprintf(os.Stderr, "[*] Starting GAL enumeration against %s\n", *url)
 	fmt.Fprintf(os.Stderr, "[*] Max prefix depth: %d\n", *depth)
 
-	for _, ch := range chars {
-		enumerate(string(ch), 1)
-	}
-
-	// Also try numeric and common special prefixes
-	for _, ch := range "0123456789" {
+	for _, ch := range topLevelPrefixes {
+		currentTopLevel++
 		enumerate(string(ch), 1)
 	}
 

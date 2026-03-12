@@ -3,6 +3,7 @@ package ews
 import (
 	"crypto/tls"
 	"net/http"
+	"net/http/cookiejar"
 	"time"
 
 	"github.com/Azure/go-ntlmssp"
@@ -10,6 +11,8 @@ import (
 
 // NewClient creates an HTTP client configured for EWS access.
 // If ntlm is true, wraps the transport with NTLM negotiation.
+// A cookie jar is used to persist session cookies across requests,
+// avoiding re-authentication on every call.
 func NewClient(ntlm bool, timeoutSec int) *http.Client {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
@@ -22,8 +25,11 @@ func NewClient(ntlm bool, timeoutSec int) *http.Client {
 		rt = ntlmssp.Negotiator{RoundTripper: transport}
 	}
 
+	jar, _ := cookiejar.New(nil)
+
 	return &http.Client{
 		Transport: rt,
 		Timeout:   time.Duration(timeoutSec) * time.Second,
+		Jar:       jar,
 	}
 }
