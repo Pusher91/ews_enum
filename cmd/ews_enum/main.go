@@ -23,8 +23,6 @@ func main() {
 	timeout := flag.Int("timeout", 30, "HTTP timeout in seconds")
 	depth := flag.Int("depth", 3, "Max prefix depth for enumeration (2=aa, 3=aaa)")
 	delay := flag.Int("delay", 0, "Delay in milliseconds between requests")
-	verbose := flag.Bool("v", false, "Verbose output to stderr")
-
 	flag.Parse()
 
 	if *url == "" || *user == "" || *pass == "" {
@@ -50,14 +48,16 @@ func main() {
 		}
 
 		requestCount++
-		if *verbose {
-			fmt.Fprintf(os.Stderr, "[*] Resolving prefix: %-6s (found: %d, requests: %d)\n", prefix, len(seen), requestCount)
-		}
+		fmt.Fprintf(os.Stderr, "\r[*] Resolving prefix: %-6s (found: %d, requests: %d)", prefix, len(seen), requestCount)
 
 		contacts, truncated, err := ews.ResolveNames(client, *url, *user, *pass, prefix)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[!] Error on prefix %q: %v\n", prefix, err)
-			if strings.Contains(err.Error(), "authentication failed") {
+			fmt.Fprintf(os.Stderr, "\n[!] Error on prefix %q: %v\n", prefix, err)
+			errStr := err.Error()
+			if strings.Contains(errStr, "authentication failed") ||
+				strings.Contains(errStr, "LogonDenied") ||
+				strings.Contains(errStr, "AccessDenied") {
+				fmt.Fprintf(os.Stderr, "[!] Authentication error — aborting. Check your credentials and auth method.\n")
 				os.Exit(2)
 			}
 			return
@@ -93,7 +93,7 @@ func main() {
 		enumerate(string(ch), 1)
 	}
 
-	fmt.Fprintf(os.Stderr, "[*] Enumeration complete: %d unique entries, %d requests\n", len(seen), requestCount)
+	fmt.Fprintf(os.Stderr, "\n[*] Enumeration complete: %d unique entries, %d requests\n", len(seen), requestCount)
 
 	// Sort results by email
 	results := make([]ews.Contact, 0, len(seen))
