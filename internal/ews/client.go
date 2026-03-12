@@ -13,11 +13,14 @@ import (
 // If ntlm is true, wraps the transport with NTLM negotiation.
 // A cookie jar is used to persist session cookies across requests,
 // avoiding re-authentication on every call.
-func NewClient(ntlm bool, timeoutSec int) *http.Client {
+func NewClient(ntlm bool, timeoutSec, maxConns int) *http.Client {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
 	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
+		TLSClientConfig:     tlsConfig,
+		MaxIdleConns:         maxConns,
+		MaxIdleConnsPerHost:  maxConns,
+		MaxConnsPerHost:      maxConns,
 	}
 
 	var rt http.RoundTripper = transport
