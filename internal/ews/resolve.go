@@ -102,13 +102,13 @@ func ResolveNames(client *http.Client, url, user, pass, prefix string) ([]Contac
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, false, fmt.Errorf("authentication failed (HTTP 401)")
-	}
-
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, false, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, false, fmt.Errorf("authentication failed (HTTP 401)")
 	}
 
 	if resp.StatusCode != http.StatusOK {

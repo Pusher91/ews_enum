@@ -9,30 +9,41 @@ import (
 	"github.com/Azure/go-ntlmssp"
 )
 
+// ClientOpts configures the HTTP client behavior.
+type ClientOpts struct {
+	NTLM            bool
+	TimeoutSec      int
+	MaxConns        int
+	UseCookies      bool
+	DisableKeepAlive bool // Force new TCP connection per request (needed for NTLM spray)
+}
+
 // NewClient creates an HTTP client configured for EWS access.
-// If ntlm is true, wraps the transport with NTLM negotiation.
-// A cookie jar is used to persist session cookies across requests,
-// avoiding re-authentication on every call.
-func NewClient(ntlm bool, timeoutSec, maxConns int) *http.Client {
+func NewClient(opts ClientOpts) *http.Client {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:         maxConns,
-		MaxIdleConnsPerHost:  maxConns,
-		MaxConnsPerHost:      maxConns,
+		MaxIdleConns:         opts.MaxConns,
+		MaxIdleConnsPerHost:  opts.MaxConns,
+		MaxConnsPerHost:      opts.MaxConns,
+		DisableKeepAlives:    opts.DisableKeepAlive,
 	}
 
 	var rt http.RoundTripper = transport
-	if ntlm {
+	if opts.NTLM {
 		rt = ntlmssp.Negotiator{RoundTripper: transport}
 	}
 
-	jar, _ := cookiejar.New(nil)
-
-	return &http.Client{
+	client := &http.Client{
 		Transport: rt,
-		Timeout:   time.Duration(timeoutSec) * time.Second,
-		Jar:       jar,
+		Timeout:   time.Duration(opts.TimeoutSec) * time.Second,
 	}
+
+	if opts.UseCookies {
+		jar, _ := cookiejar.New(nil)
+		client.Jar = jar
+	}
+
+	return client
 }
