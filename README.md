@@ -112,4 +112,4 @@ CORP\jsmith,P@ssword,valid
 
 **JSON** (`-format json`): array of contact or credential result objects.
 
-`-format` is only used by spray, guess, and enum modes. Auth-check mode prints status to stderr and ignores it.
+`-format` and `-o` are only used by spray, guess, and enum modes. Auth-check mode prints status to stderr and ignores them.

@@ -273,3 +273,33 @@ func TestParseConfigWarnsThatDebugDupesIsDeprecated(t *testing.T) {
 		t.Fatalf("warnings = %v, want deprecated -debug-dupes warning", warnings)
 	}
 }
+
+func TestParseConfigAuthModeWarnsOnIgnoredOutputFlags(t *testing.T) {
+	t.Parallel()
+
+	_, warnings, _, err := parseConfig([]string{
+		"-url", "https://mail.example.com/EWS/Exchange.asmx",
+		"-user", "alice",
+		"-pass", "secret",
+		"-format", "json",
+		"-o", "out.json",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v", err)
+	}
+
+	want := map[string]bool{
+		"[!] -format is ignored in auth-check mode": false,
+		"[!] -o is ignored in auth-check mode":      false,
+	}
+	for _, warning := range warnings {
+		if _, ok := want[warning]; ok {
+			want[warning] = true
+		}
+	}
+	for warning, found := range want {
+		if !found {
+			t.Fatalf("warnings = %v, want %q", warnings, warning)
+		}
+	}
+}

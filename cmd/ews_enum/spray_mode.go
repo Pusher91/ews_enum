@@ -37,13 +37,14 @@ func duplicateUsernameList(entries []duplicateUsername) []string {
 }
 
 func runSpray(cfg appConfig, stdout, stderr io.Writer) int {
-	client := ews.NewClient(ews.ClientOpts{
+	baseClient := ews.NewClient(ews.ClientOpts{
 		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns,
 		DisableKeepAlive: cfg.NTLM, // NTLM binds auth to TCP connection; do not reuse across users.
 	})
 
 	return runSprayWithTester(cfg, stdout, stderr, func(username string) (ews.AuthResult, error) {
-		return ews.TestAuth(client, cfg.URL, username, cfg.Pass)
+		attemptClient := ews.CloneClientWithFreshJar(baseClient, true)
+		return ews.TestAuth(attemptClient, cfg.URL, username, cfg.Pass)
 	})
 }
 

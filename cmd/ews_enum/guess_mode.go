@@ -49,13 +49,14 @@ func skippedCredentialCombinations(entries []duplicateCredentialAttempt) []strin
 }
 
 func runGuess(cfg appConfig, stdout, stderr io.Writer) int {
-	client := ews.NewClient(ews.ClientOpts{
+	baseClient := ews.NewClient(ews.ClientOpts{
 		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns,
 		DisableKeepAlive: cfg.NTLM, // NTLM binds auth to TCP connection; do not reuse across users.
 	})
 
 	return runGuessWithTester(cfg, stdout, stderr, func(attempt credentialAttempt) (ews.AuthResult, error) {
-		return ews.TestAuth(client, cfg.URL, attempt.User, attempt.Password)
+		attemptClient := ews.CloneClientWithFreshJar(baseClient, true)
+		return ews.TestAuth(attemptClient, cfg.URL, attempt.User, attempt.Password)
 	})
 }
 

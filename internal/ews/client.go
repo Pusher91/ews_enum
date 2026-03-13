@@ -47,3 +47,20 @@ func NewClient(opts ClientOpts) *http.Client {
 
 	return client
 }
+
+// CloneClientWithFreshJar reuses the base client's transport and timeout while
+// giving the caller a fresh cookie jar for a single isolated attempt.
+func CloneClientWithFreshJar(base *http.Client, useCookies bool) *http.Client {
+	client := &http.Client{
+		Transport:     base.Transport,
+		CheckRedirect: base.CheckRedirect,
+		Timeout:       base.Timeout,
+	}
+
+	if useCookies {
+		jar, _ := cookiejar.New(nil)
+		client.Jar = jar
+	}
+
+	return client
+}
