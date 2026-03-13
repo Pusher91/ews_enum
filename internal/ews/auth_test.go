@@ -124,6 +124,13 @@ func TestAuthClassifiesResponses(t *testing.T) {
 			wantResult:  AuthError,
 			wantErrText: "unexpected non-EWS response",
 		},
+		{
+			name:        "non ews logon denied marker is not treated as invalid creds",
+			status:      http.StatusForbidden,
+			body:        "<html><body>LogonDenied</body></html>",
+			wantResult:  AuthError,
+			wantErrText: "HTTP 403",
+		},
 	}
 
 	for _, tc := range tests {

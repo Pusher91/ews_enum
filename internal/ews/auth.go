@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
 // AuthResult represents the outcome of an authentication attempt.
@@ -85,10 +84,6 @@ func TestAuth(client *http.Client, url, user, pass string) (AuthResult, error) {
 	}
 
 	bodyStr := string(respBody)
-	if strings.Contains(bodyStr, "LogonDenied") {
-		return AuthFailed, nil
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		return AuthError, &ResponseError{
 			Op:         "TestAuth",

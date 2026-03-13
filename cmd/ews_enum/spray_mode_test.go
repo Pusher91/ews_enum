@@ -115,6 +115,41 @@ func TestRunSprayDedupesUserfileEntries(t *testing.T) {
 	}
 }
 
+func TestRunSprayDebugDupesShowsCanonicalMappings(t *testing.T) {
+	t.Parallel()
+
+	cfg := appConfig{
+		URL:        "https://mail.example.com/EWS/Exchange.asmx",
+		UserFile:   writeUserFile(t, "alice", "Alice", "bob", "BOB"),
+		Pass:       "secret",
+		Format:     "csv",
+		Workers:    2,
+		Conns:      1,
+		DebugDupes: true,
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := runSprayWithTester(cfg, &stdout, &stderr, func(username string) (ews.AuthResult, error) {
+		return ews.AuthFailed, nil
+	})
+	if code != 0 {
+		t.Fatalf("runSprayWithTester returned %d, want 0", code)
+	}
+
+	errText := stderr.String()
+	if !strings.Contains(errText, "Skipping 2 duplicate usernames") {
+		t.Fatalf("stderr = %q, want duplicate summary", errText)
+	}
+	if !strings.Contains(errText, "duplicate: Alice -> alice") {
+		t.Fatalf("stderr = %q, want Alice duplicate mapping", errText)
+	}
+	if !strings.Contains(errText, "duplicate: BOB -> bob") {
+		t.Fatalf("stderr = %q, want BOB duplicate mapping", errText)
+	}
+}
+
 func TestRunSprayDelayIsSharedAcrossWorkers(t *testing.T) {
 	t.Parallel()
 

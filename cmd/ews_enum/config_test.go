@@ -22,10 +22,21 @@ func TestParseConfigModesAndWarnings(t *testing.T) {
 			wantMode: modeEnum,
 		},
 		{
+			name:     "guess mode",
+			args:     []string{"-url", "https://mail.example.com/EWS/Exchange.asmx", "-credfile", "creds.txt"},
+			wantMode: modeGuess,
+		},
+		{
 			name:        "spray mode warns on enum",
 			args:        []string{"-url", "https://mail.example.com/EWS/Exchange.asmx", "-userfile", "users.txt", "-pass", "secret", "-enum"},
 			wantMode:    modeSpray,
 			wantWarning: "[!] -enum is ignored in spray mode",
+		},
+		{
+			name:        "guess mode warns on ignored flags",
+			args:        []string{"-url", "https://mail.example.com/EWS/Exchange.asmx", "-credfile", "creds.txt", "-pass", "secret", "-enum"},
+			wantMode:    modeGuess,
+			wantWarning: "[!] -enum is ignored in guessing mode",
 		},
 	}
 
@@ -49,8 +60,8 @@ func TestParseConfigModesAndWarnings(t *testing.T) {
 				return
 			}
 
-			if len(warnings) != 1 || warnings[0] != tc.wantWarning {
-				t.Fatalf("warnings = %v, want %q", warnings, tc.wantWarning)
+			if len(warnings) == 0 || warnings[0] != tc.wantWarning {
+				t.Fatalf("warnings = %v, want first warning %q", warnings, tc.wantWarning)
 			}
 		})
 	}
@@ -117,6 +128,22 @@ func TestParseConfigRejectsInvalidValues(t *testing.T) {
 				"-pass", "secret",
 				"-enum",
 				"-depth", "0",
+			},
+		},
+		{
+			name: "cannot combine user and credfile",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-credfile", "creds.txt",
+				"-pass", "secret",
+			},
+		},
+		{
+			name: "auth mode still requires pass",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
 			},
 		},
 	}
@@ -195,5 +222,29 @@ func TestParseConfigAllowsNonPositiveDepthOutsideEnumMode(t *testing.T) {
 				t.Fatalf("depth = %d, want 0", cfg.Depth)
 			}
 		})
+	}
+}
+
+func TestParseConfigGuessModeWarnsThatPassIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	_, warnings, _, err := parseConfig([]string{
+		"-url", "https://mail.example.com/EWS/Exchange.asmx",
+		"-credfile", "creds.txt",
+		"-pass", "secret",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v", err)
+	}
+
+	found := false
+	for _, warning := range warnings {
+		if warning == "[!] -pass is ignored in guessing mode" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v, want ignored -pass warning", warnings)
 	}
 }

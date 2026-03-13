@@ -10,6 +10,11 @@ import (
 	"ews_enum/internal/ews"
 )
 
+type duplicateUsername struct {
+	Duplicate string
+	Canonical string
+}
+
 func runSpray(cfg appConfig, stdout, stderr io.Writer) int {
 	client := ews.NewClient(ews.ClientOpts{
 		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns,
@@ -21,18 +26,21 @@ func runSpray(cfg appConfig, stdout, stderr io.Writer) int {
 	})
 }
 
-func dedupeUsernames(users []string) ([]string, int) {
-	seen := make(map[string]struct{}, len(users))
+func dedupeUsernames(users []string) ([]string, []duplicateUsername) {
+	seen := make(map[string]string, len(users))
 	unique := make([]string, 0, len(users))
-	duplicates := 0
+	duplicates := make([]duplicateUsername, 0)
 
 	for _, user := range users {
 		key := strings.ToLower(user)
-		if _, exists := seen[key]; exists {
-			duplicates++
+		if canonical, exists := seen[key]; exists {
+			duplicates = append(duplicates, duplicateUsername{
+				Duplicate: user,
+				Canonical: canonical,
+			})
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[key] = user
 		unique = append(unique, user)
 	}
 
@@ -50,7 +58,8 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 		return 1
 	}
 
-	users, duplicates := dedupeUsernames(users)
+	users, duplicateEntries := dedupeUsernames(users)
+	duplicates := len(duplicateEntries)
 	if len(users) == 0 {
 		fmt.Fprintf(stderr, "[!] No unique usernames found in %s\n", cfg.UserFile)
 		return 1
@@ -59,7 +68,16 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	fmt.Fprintf(stderr, "[*] Password spray against %s\n", cfg.URL)
 	fmt.Fprintf(stderr, "[*] Users: %d, workers: %d, connections: %d\n", len(users), cfg.Workers, cfg.Conns)
 	if duplicates > 0 {
-		fmt.Fprintf(stderr, "[!] Skipping %d duplicate usernames from %s\n", duplicates, cfg.UserFile)
+		fmt.Fprintf(stderr, "[!] Skipping %d duplicate usernames from %s after trim/lowercase normalization\n", duplicates, cfg.UserFile)
+		if cfg.DebugDupes {
+			for _, dup := range duplicateEntries {
+				if dup.Duplicate == dup.Canonical {
+					fmt.Fprintf(stderr, "[!]   duplicate: %s\n", dup.Duplicate)
+					continue
+				}
+				fmt.Fprintf(stderr, "[!]   duplicate: %s -> %s\n", dup.Duplicate, dup.Canonical)
+			}
+		}
 	}
 
 	var stateMu sync.Mutex

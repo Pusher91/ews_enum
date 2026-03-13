@@ -13,9 +13,10 @@ import (
 	"ews_enum/internal/ews"
 )
 
-type sprayResult struct {
-	User   string `json:"user"`
-	Status string `json:"status"`
+type credentialResult struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Status   string `json:"status"`
 }
 
 func contactSortFields(contact ews.Contact) []string {
@@ -56,16 +57,34 @@ func openOutput(stdout io.Writer, path string) (io.Writer, func() error, error) 
 		return stdout, func() error { return nil }, nil
 	}
 
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
 		return nil, nil, err
 	}
 
 	return f, f.Close, nil
 }
 
-func writeSprayResults(out io.Writer, format, password string, validUsers []string) error {
-	sort.Strings(validUsers)
+func writeCredentialResults(out io.Writer, format string, results []credentialResult) error {
+	sort.Slice(results, func(i, j int) bool {
+		leftUser := strings.ToLower(results[i].User)
+		rightUser := strings.ToLower(results[j].User)
+		if leftUser != rightUser {
+			return leftUser < rightUser
+		}
+
+		leftPass := strings.ToLower(results[i].Password)
+		rightPass := strings.ToLower(results[j].Password)
+		if leftPass != rightPass {
+			return leftPass < rightPass
+		}
+
+		return results[i].Status < results[j].Status
+	})
 
 	switch format {
 	case "csv":
@@ -73,24 +92,32 @@ func writeSprayResults(out io.Writer, format, password string, validUsers []stri
 		if err := w.Write([]string{"username", "password", "status"}); err != nil {
 			return err
 		}
-		for _, user := range validUsers {
-			if err := w.Write([]string{user, password, "valid"}); err != nil {
+		for _, result := range results {
+			if err := w.Write([]string{result.User, result.Password, result.Status}); err != nil {
 				return err
 			}
 		}
 		w.Flush()
 		return w.Error()
 	case "json":
-		results := make([]sprayResult, len(validUsers))
-		for i, user := range validUsers {
-			results[i] = sprayResult{User: user, Status: "valid"}
-		}
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		return enc.Encode(results)
 	default:
-		return fmt.Errorf("unsupported spray output format %q", format)
+		return fmt.Errorf("unsupported credential output format %q", format)
 	}
+}
+
+func writeSprayResults(out io.Writer, format, password string, validUsers []string) error {
+	results := make([]credentialResult, len(validUsers))
+	for i, user := range validUsers {
+		results[i] = credentialResult{
+			User:     user,
+			Password: password,
+			Status:   "valid",
+		}
+	}
+	return writeCredentialResults(out, format, results)
 }
 
 func writeContacts(out io.Writer, format string, contacts []ews.Contact) error {

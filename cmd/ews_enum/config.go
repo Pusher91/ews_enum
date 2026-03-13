@@ -11,28 +11,33 @@ type appMode int
 const (
 	modeAuthCheck appMode = iota
 	modeSpray
+	modeGuess
 	modeEnum
 	maxEnumDepth = 5
 )
 
 type appConfig struct {
-	URL      string
-	User     string
-	UserFile string
-	Pass     string
-	EnumGAL  bool
-	Format   string
-	OutFile  string
-	NTLM     bool
-	Timeout  int
-	Depth    int
-	DelayMS  int
-	Workers  int
-	Conns    int
+	URL        string
+	User       string
+	UserFile   string
+	CredFile   string
+	Pass       string
+	EnumGAL    bool
+	DebugDupes bool
+	Format     string
+	OutFile    string
+	NTLM       bool
+	Timeout    int
+	Depth      int
+	DelayMS    int
+	Workers    int
+	Conns      int
 }
 
 func (c appConfig) Mode() appMode {
 	switch {
+	case c.CredFile != "":
+		return modeGuess
 	case c.UserFile != "":
 		return modeSpray
 	case c.EnumGAL:
@@ -43,13 +48,24 @@ func (c appConfig) Mode() appMode {
 }
 
 func (c appConfig) Validate() error {
+	credSources := 0
+	if c.User != "" {
+		credSources++
+	}
+	if c.UserFile != "" {
+		credSources++
+	}
+	if c.CredFile != "" {
+		credSources++
+	}
+
 	switch {
-	case c.URL == "" || c.Pass == "":
-		return fmt.Errorf("missing required -url or -pass")
-	case c.User != "" && c.UserFile != "":
-		return fmt.Errorf("cannot use both -user and -userfile")
-	case c.User == "" && c.UserFile == "":
-		return fmt.Errorf("must specify either -user or -userfile")
+	case c.URL == "":
+		return fmt.Errorf("missing required -url")
+	case credSources > 1:
+		return fmt.Errorf("must specify exactly one of -user, -userfile, or -credfile")
+	case credSources == 0:
+		return fmt.Errorf("must specify one of -user, -userfile, or -credfile")
 	case c.Workers < 1:
 		return fmt.Errorf("-workers must be at least 1")
 	case c.Conns < 1:
@@ -62,15 +78,29 @@ func (c appConfig) Validate() error {
 
 	switch c.Mode() {
 	case modeSpray:
+		if c.Pass == "" {
+			return fmt.Errorf("missing required -pass in spray mode")
+		}
 		if c.Format != "csv" && c.Format != "json" {
 			return fmt.Errorf("invalid -format %q for spray mode (allowed: csv, json)", c.Format)
 		}
+	case modeGuess:
+		if c.Format != "csv" && c.Format != "json" {
+			return fmt.Errorf("invalid -format %q for guessing mode (allowed: csv, json)", c.Format)
+		}
 	case modeEnum:
+		if c.Pass == "" {
+			return fmt.Errorf("missing required -pass in enum mode")
+		}
 		if c.Depth < 1 {
 			return fmt.Errorf("-depth must be at least 1 in enum mode")
 		}
 		if c.Format != "csv" && c.Format != "json" && c.Format != "emails" {
 			return fmt.Errorf("invalid -format %q for enum mode (allowed: csv, json, emails)", c.Format)
+		}
+	default:
+		if c.Pass == "" {
+			return fmt.Errorf("missing required -pass in auth-check mode")
 		}
 	}
 
@@ -85,8 +115,10 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	fs.StringVar(&cfg.URL, "url", "", "EWS endpoint URL (e.g. https://mail.target.com/EWS/Exchange.asmx)")
 	fs.StringVar(&cfg.User, "user", "", "Username (DOMAIN\\user or user@domain.com)")
 	fs.StringVar(&cfg.UserFile, "userfile", "", "File of usernames for password spraying (one per line)")
-	fs.StringVar(&cfg.Pass, "pass", "", "Password")
+	fs.StringVar(&cfg.CredFile, "credfile", "", "File of username:password guesses (one per line, first username wins)")
+	fs.StringVar(&cfg.Pass, "pass", "", "Password (required unless using -credfile)")
 	fs.BoolVar(&cfg.EnumGAL, "enum", false, "Enumerate the Global Address List after authenticating")
+	fs.BoolVar(&cfg.DebugDupes, "debug-dupes", false, "In spray mode, print duplicate usernames after trim/lowercase normalization")
 	fs.StringVar(&cfg.Format, "format", "csv", "Output format: csv, json, emails (enum) or csv, json (spray)")
 	fs.StringVar(&cfg.OutFile, "o", "", "Output file (default: stdout)")
 	fs.BoolVar(&cfg.NTLM, "ntlm", true, "Use NTLM authentication (default true, set -ntlm=false for basic)")
@@ -108,6 +140,12 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	if cfg.Mode() == modeSpray && cfg.EnumGAL {
 		warnings = append(warnings, "[!] -enum is ignored in spray mode")
 	}
+	if cfg.Mode() == modeGuess && cfg.EnumGAL {
+		warnings = append(warnings, "[!] -enum is ignored in guessing mode")
+	}
+	if cfg.Mode() == modeGuess && cfg.Pass != "" {
+		warnings = append(warnings, "[!] -pass is ignored in guessing mode")
+	}
 	if cfg.Mode() == modeEnum && cfg.Depth > maxEnumDepth {
 		warnings = append(warnings, fmt.Sprintf("[!] -depth %d is capped to %d", cfg.Depth, maxEnumDepth))
 		cfg.Depth = maxEnumDepth
@@ -118,7 +156,7 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 
 func renderUsage(fs *flag.FlagSet) string {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Usage: ews_enum -url <EWS_URL> (-user <USER> | -userfile <FILE>) -pass <PASS> [options]\n\n")
+	fmt.Fprintf(&buf, "Usage: ews_enum -url <EWS_URL> (-user <USER> -pass <PASS> | -userfile <FILE> -pass <PASS> | -credfile <FILE>) [options]\n\n")
 	fs.SetOutput(&buf)
 	fs.PrintDefaults()
 	return buf.String()

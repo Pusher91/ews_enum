@@ -25,6 +25,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch cfg.Mode() {
 	case modeSpray:
 		return runSpray(cfg, stdout, stderr)
+	case modeGuess:
+		return runGuess(cfg, stdout, stderr)
 	case modeEnum:
 		return runEnum(cfg, stdout, stderr)
 	default:
