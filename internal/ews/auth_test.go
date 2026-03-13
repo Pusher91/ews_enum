@@ -43,6 +43,32 @@ func soapResponse(class, code string) string {
 </soap:Envelope>`, class, code)
 }
 
+func resolveNamesSuccessResponse(totalItems int, includesLast string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ResolveNamesResponse xmlns="http://schemas.microsoft.com/exchange/services/2006/messages">
+      <ResponseMessages>
+        <ResolveNamesResponseMessage ResponseClass="Success">
+          <ResponseCode>NoError</ResponseCode>
+          <ResolutionSet TotalItemsInView="%d" IncludesLastItemInRange="%s">
+            <Resolution>
+              <Mailbox>
+                <Name>Alice Smith</Name>
+                <EmailAddress>alice@example.com</EmailAddress>
+              </Mailbox>
+              <Contact>
+                <DisplayName>Alice Smith</DisplayName>
+              </Contact>
+            </Resolution>
+          </ResolutionSet>
+        </ResolveNamesResponseMessage>
+      </ResponseMessages>
+    </ResolveNamesResponse>
+  </soap:Body>
+</soap:Envelope>`, totalItems, includesLast)
+}
+
 func TestAuthClassifiesResponses(t *testing.T) {
 	t.Parallel()
 
@@ -142,5 +168,53 @@ func TestResolveNamesSurfacesSOAPErrorCode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ErrorAccessDenied") {
 		t.Fatalf("error = %q, want AccessDenied code", err.Error())
+	}
+}
+
+func TestResolveNamesTruncationUsesIncludesLastItemInRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		body         string
+		wantContacts int
+		wantTruncate bool
+	}{
+		{
+			name:         "false means truncated even below historical limit",
+			body:         resolveNamesSuccessResponse(1, "false"),
+			wantContacts: 1,
+			wantTruncate: true,
+		},
+		{
+			name:         "true means complete even at historical limit",
+			body:         resolveNamesSuccessResponse(100, "true"),
+			wantContacts: 1,
+			wantTruncate: false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			contacts, truncated, err := ResolveNames(
+				testClient(http.StatusOK, tc.body),
+				"https://mail.example.com/EWS/Exchange.asmx",
+				"user",
+				"pass",
+				"a",
+			)
+			if err != nil {
+				t.Fatalf("ResolveNames returned error: %v", err)
+			}
+			if len(contacts) != tc.wantContacts {
+				t.Fatalf("contacts = %d, want %d", len(contacts), tc.wantContacts)
+			}
+			if truncated != tc.wantTruncate {
+				t.Fatalf("truncated = %v, want %v", truncated, tc.wantTruncate)
+			}
+		})
 	}
 }

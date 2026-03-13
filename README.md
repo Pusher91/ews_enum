@@ -56,7 +56,7 @@ The user file should contain one username per line. Blank lines and `#` comments
 | `-ntlm` | `true` | Use NTLM auth (`false` for Basic) |
 | `-timeout` | `30` | HTTP timeout in seconds |
 | `-depth` | `3` | Max prefix depth for enumeration |
-| `-delay` | `0` | Delay between requests in milliseconds |
+| `-delay` | `0` | Minimum delay between request starts in milliseconds, shared across workers |
 | `-workers` | `10` | Number of concurrent workers |
 | `-conns` | `20` | Max concurrent connections to the server |
 
@@ -72,7 +72,7 @@ ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\admin' -pass '
 # Enumerate GAL, emails only
 ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\admin' -pass 'P@ss' -enum -format emails -o emails.txt
 
-# Spray with 5 workers and 1s delay between attempts
+# Spray with 5 workers and 1s minimum delay between request starts
 ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -userfile users.txt -pass 'Summer2026!' -workers 5 -delay 1000
 
 # Fast enumeration with more workers

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"ews_enum/internal/ews"
 )
@@ -70,6 +69,7 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	var opErrorCount atomic.Int64
 	totalUsers := int64(len(users))
 	workCh := make(chan string, cfg.Workers*2)
+	pacer := newRequestPacer(cfg.DelayMS)
 	var wg sync.WaitGroup
 
 	clearProgress := func() {
@@ -79,8 +79,8 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	worker := func() {
 		defer wg.Done()
 		for username := range workCh {
-			if cfg.DelayMS > 0 {
-				time.Sleep(time.Duration(cfg.DelayMS) * time.Millisecond)
+			if !pacer.Wait(nil) {
+				return
 			}
 
 			count := attemptCount.Add(1)

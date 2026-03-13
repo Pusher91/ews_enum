@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 const soapEnvelopeTemplate = `<?xml version="1.0" encoding="utf-8"?>
@@ -206,10 +207,18 @@ func ResolveNames(client *http.Client, url, user, pass, prefix string) ([]Contac
 		contacts = append(contacts, c)
 	}
 
-	// If TotalItemsInView >= 100, EWS truncated results — need to go deeper
-	truncated := msg.ResolutionSet.TotalItemsInView >= 100
+	truncated := resolutionSetTruncated(msg.ResolutionSet)
 
 	return contacts, truncated, nil
+}
+
+func resolutionSetTruncated(set resolutionSet) bool {
+	if set.IncludesLastItemInRange != "" {
+		return !strings.EqualFold(set.IncludesLastItemInRange, "true")
+	}
+
+	// Fall back to the historical heuristic if the attribute is absent.
+	return set.TotalItemsInView >= 100
 }
 
 func xmlEscape(s string) string {

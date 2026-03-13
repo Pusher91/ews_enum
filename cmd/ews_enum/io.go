@@ -18,6 +18,20 @@ type sprayResult struct {
 	Status string `json:"status"`
 }
 
+func contactSortFields(contact ews.Contact) []string {
+	return []string{
+		strings.ToLower(contact.EmailAddress),
+		strings.ToLower(contact.DisplayName),
+		strings.ToLower(contact.GivenName),
+		strings.ToLower(contact.Surname),
+		strings.ToLower(contact.Title),
+		strings.ToLower(contact.Department),
+		strings.ToLower(contact.Office),
+		strings.ToLower(contact.Company),
+		strings.ToLower(contact.Phone),
+	}
+}
+
 func readLines(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -81,7 +95,15 @@ func writeSprayResults(out io.Writer, format, password string, validUsers []stri
 
 func writeContacts(out io.Writer, format string, contacts []ews.Contact) error {
 	sort.Slice(contacts, func(i, j int) bool {
-		return strings.ToLower(contacts[i].EmailAddress) < strings.ToLower(contacts[j].EmailAddress)
+		left := contactSortFields(contacts[i])
+		right := contactSortFields(contacts[j])
+		for idx := range left {
+			if left[idx] == right[idx] {
+				continue
+			}
+			return left[idx] < right[idx]
+		}
+		return false
 	})
 
 	switch format {

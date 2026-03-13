@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"strings"
@@ -258,5 +259,53 @@ func TestEnumerateGALFailsWhenLaterRequestsError(t *testing.T) {
 	}
 	if enumErr.Kind != ews.ErrorKindServer {
 		t.Fatalf("error kind = %v, want %v", enumErr.Kind, ews.ErrorKindServer)
+	}
+}
+
+func TestRunEnumWritesPartialResultsOnLateError(t *testing.T) {
+	t.Parallel()
+
+	cfg := appConfig{
+		URL:     "https://mail.example.com/EWS/Exchange.asmx",
+		User:    "alice",
+		Pass:    "secret",
+		Depth:   1,
+		Workers: 1,
+		Format:  "emails",
+	}
+
+	client := enumDynamicClient(func(req *http.Request) (*http.Response, error) {
+		bodyBytes, readErr := io.ReadAll(req.Body)
+		if readErr != nil {
+			t.Fatalf("read request body: %v", readErr)
+		}
+		body := string(bodyBytes)
+
+		status := http.StatusServiceUnavailable
+		respBody := "<html><body>proxy error</body></html>"
+		if strings.Contains(body, "<m:UnresolvedEntry>a</m:UnresolvedEntry>") {
+			status = http.StatusOK
+			respBody = enumSingleContactSOAP("Alice Smith", "alice@example.com", "Engineer")
+		}
+
+		return &http.Response{
+			StatusCode: status,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(respBody)),
+			Request:    req,
+		}, nil
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runEnumWithClient(cfg, &stdout, &stderr, client)
+	if code != 2 {
+		t.Fatalf("runEnumWithClient returned %d, want 2", code)
+	}
+	if !strings.Contains(stdout.String(), "alice@example.com") {
+		t.Fatalf("stdout = %q, want partial result output", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Writing 1 partial results") {
+		t.Fatalf("stderr = %q, want partial-results warning", stderr.String())
 	}
 }

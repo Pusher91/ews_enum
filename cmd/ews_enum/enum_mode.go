@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"ews_enum/internal/ews"
 )
@@ -80,6 +79,11 @@ func runEnum(cfg appConfig, stdout, stderr io.Writer) int {
 	client := ews.NewClient(ews.ClientOpts{
 		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns, UseCookies: true,
 	})
+
+	return runEnumWithClient(cfg, stdout, stderr, client)
+}
+
+func runEnumWithClient(cfg appConfig, stdout, stderr io.Writer, client *http.Client) int {
 	var outputMu sync.Mutex
 
 	clearProgress := func() {
@@ -121,12 +125,19 @@ func runEnum(cfg appConfig, stdout, stderr io.Writer) int {
 	outputMu.Lock()
 	clearProgress()
 	outputMu.Unlock()
-	if err != nil {
+	partial := err != nil && len(result.Contacts) > 0
+	if err != nil && !partial {
 		fmt.Fprintf(stderr, "[!] Enumeration failed: %v\n", err)
 		return 2
 	}
+	if partial {
+		fmt.Fprintf(stderr, "[!] Enumeration completed with errors: %v\n", err)
+		fmt.Fprintf(stderr, "[!] Writing %d partial results from %d requests\n", len(result.Contacts), result.Requests)
+	}
 
-	fmt.Fprintf(stderr, "[*] Enumeration complete: %d unique entries, %d requests\n", len(result.Contacts), result.Requests)
+	if !partial {
+		fmt.Fprintf(stderr, "[*] Enumeration complete: %d unique entries, %d requests\n", len(result.Contacts), result.Requests)
+	}
 
 	out, closeOut, err := openOutput(stdout, cfg.OutFile)
 	if err != nil {
@@ -142,6 +153,10 @@ func runEnum(cfg appConfig, stdout, stderr io.Writer) int {
 
 	if cfg.OutFile != "" {
 		fmt.Fprintf(stderr, "[*] Results written to %s\n", cfg.OutFile)
+	}
+
+	if partial {
+		return 2
 	}
 
 	return 0
@@ -171,6 +186,7 @@ func enumerateGAL(client *http.Client, cfg appConfig, reporter enumReporter) (en
 	var firstFailureKind ews.ErrorKind
 	var firstGenericFailure error
 	var firstGenericFailureKind ews.ErrorKind
+	pacer := newRequestPacer(cfg.DelayMS)
 
 	abortThreshold := int64(cfg.Workers)
 	if abortThreshold > totalTopLevel {
@@ -244,13 +260,8 @@ func enumerateGAL(client *http.Client, cfg appConfig, reporter enumReporter) (en
 		default:
 		}
 
-		if cfg.DelayMS > 0 {
-			time.Sleep(time.Duration(cfg.DelayMS) * time.Millisecond)
-			select {
-			case <-abortCh:
-				return
-			default:
-			}
+		if !pacer.Wait(abortCh) {
+			return
 		}
 
 		requestCount.Add(1)

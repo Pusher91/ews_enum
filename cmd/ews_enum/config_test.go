@@ -109,6 +109,16 @@ func TestParseConfigRejectsInvalidValues(t *testing.T) {
 				"-format", "jsno",
 			},
 		},
+		{
+			name: "enum rejects non-positive depth",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-enum",
+				"-depth", "0",
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -142,5 +152,48 @@ func TestParseConfigCapsEnumDepth(t *testing.T) {
 	}
 	if len(warnings) != 1 || warnings[0] != "[!] -depth 9 is capped to 5" {
 		t.Fatalf("warnings = %v, want depth cap warning", warnings)
+	}
+}
+
+func TestParseConfigAllowsNonPositiveDepthOutsideEnumMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "auth check ignores depth",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-depth", "0",
+			},
+		},
+		{
+			name: "spray ignores depth",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-userfile", "users.txt",
+				"-pass", "secret",
+				"-depth", "0",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, _, _, err := parseConfig(tc.args)
+			if err != nil {
+				t.Fatalf("parseConfig returned error: %v", err)
+			}
+			if cfg.Depth != 0 {
+				t.Fatalf("depth = %d, want 0", cfg.Depth)
+			}
+		})
 	}
 }

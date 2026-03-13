@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ews_enum/internal/ews"
 )
@@ -111,5 +112,47 @@ func TestRunSprayDedupesUserfileEntries(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Skipping 3 duplicate usernames") {
 		t.Fatalf("stderr = %q, want duplicate warning", stderr.String())
+	}
+}
+
+func TestRunSprayDelayIsSharedAcrossWorkers(t *testing.T) {
+	t.Parallel()
+
+	cfg := appConfig{
+		URL:      "https://mail.example.com/EWS/Exchange.asmx",
+		UserFile: writeUserFile(t, "alice", "bob", "carol"),
+		Pass:     "secret",
+		Format:   "csv",
+		Workers:  3,
+		Conns:    1,
+		DelayMS:  30,
+	}
+
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+		mu     sync.Mutex
+		starts []time.Time
+	)
+
+	code := runSprayWithTester(cfg, &stdout, &stderr, func(username string) (ews.AuthResult, error) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		return ews.AuthFailed, nil
+	})
+	if code != 0 {
+		t.Fatalf("runSprayWithTester returned %d, want 0", code)
+	}
+	if len(starts) != 3 {
+		t.Fatalf("starts = %d, want 3", len(starts))
+	}
+
+	sort.Slice(starts, func(i, j int) bool { return starts[i].Before(starts[j]) })
+	if gap := starts[1].Sub(starts[0]); gap < 20*time.Millisecond {
+		t.Fatalf("first gap = %v, want shared pacing across workers", gap)
+	}
+	if gap := starts[2].Sub(starts[1]); gap < 20*time.Millisecond {
+		t.Fatalf("second gap = %v, want shared pacing across workers", gap)
 	}
 }
