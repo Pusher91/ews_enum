@@ -49,13 +49,8 @@ func skippedCredentialCombinations(entries []duplicateCredentialAttempt) []strin
 }
 
 func runGuess(cfg appConfig, stdout, stderr io.Writer) int {
-	baseClient := ews.NewClient(ews.ClientOpts{
-		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns,
-		DisableKeepAlive: cfg.NTLM, // NTLM binds auth to TCP connection; do not reuse across users.
-	})
-
 	return runGuessWithTester(cfg, stdout, stderr, func(attempt credentialAttempt) (ews.AuthResult, error) {
-		attemptClient := ews.CloneClientWithFreshJar(baseClient, true)
+		attemptClient := ews.NewIsolatedAuthClient(cfg.NTLM, cfg.Timeout)
 		return ews.TestAuth(attemptClient, cfg.URL, attempt.User, attempt.Password)
 	})
 }
@@ -142,6 +137,7 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 	var opErrorCount atomic.Int64
 	totalAttempts := int64(len(attempts))
 	workCh := make(chan credentialAttempt, cfg.Workers*2)
+	connSem := make(chan struct{}, cfg.Conns)
 	pacer := newRequestPacer(cfg.DelayMS)
 	var wg sync.WaitGroup
 
@@ -166,8 +162,10 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 			fmt.Fprint(stderr, formatAttemptProgress(completed, totalAttempts, running, attempt.User, hits))
 			outputMu.Unlock()
 
-			result, authErr := testAuth(attempt)
-			switch result {
+				connSem <- struct{}{}
+				result, authErr := testAuth(attempt)
+				<-connSem
+				switch result {
 			case ews.AuthSuccess:
 				stateMu.Lock()
 				validResults = append(validResults, credentialResult{

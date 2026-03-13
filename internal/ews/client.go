@@ -64,3 +64,14 @@ func CloneClientWithFreshJar(base *http.Client, useCookies bool) *http.Client {
 
 	return client
 }
+
+// NewIsolatedAuthClient creates a fresh client for a single authentication
+// attempt so cookies and TCP connection state cannot leak across usernames.
+func NewIsolatedAuthClient(ntlm bool, timeoutSec int) *http.Client {
+	return NewClient(ClientOpts{
+		NTLM:       ntlm,
+		TimeoutSec: timeoutSec,
+		MaxConns:   1,
+		UseCookies: true,
+	})
+}

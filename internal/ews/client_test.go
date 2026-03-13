@@ -88,3 +88,23 @@ func TestAuthFailsCookieBoundFlowWithoutJar(t *testing.T) {
 		t.Fatalf("result = %v, want %v", result, AuthFailed)
 	}
 }
+
+func TestNewIsolatedAuthClientReturnsFreshStatePerAttempt(t *testing.T) {
+	t.Parallel()
+
+	first := NewIsolatedAuthClient(false, 5)
+	second := NewIsolatedAuthClient(false, 5)
+
+	if first == second {
+		t.Fatal("expected distinct clients per attempt")
+	}
+	if first.Transport == second.Transport {
+		t.Fatal("expected distinct transports per attempt")
+	}
+	if first.Jar == nil || second.Jar == nil {
+		t.Fatal("expected cookie jars on isolated auth clients")
+	}
+	if first.Jar == second.Jar {
+		t.Fatal("expected distinct cookie jars per attempt")
+	}
+}

