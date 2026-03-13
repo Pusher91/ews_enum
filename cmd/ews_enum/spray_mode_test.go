@@ -113,6 +113,15 @@ func TestRunSprayDedupesUserfileEntries(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Skipping 3 duplicate usernames") {
 		t.Fatalf("stderr = %q, want duplicate warning", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "Duplicate usernames skipped (2 unique):") {
+		t.Fatalf("stderr = %q, want duplicate username summary", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "[*]   alice") {
+		t.Fatalf("stderr = %q, want alice in duplicate username list", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "[*]   bob") {
+		t.Fatalf("stderr = %q, want bob in duplicate username list", stderr.String())
+	}
 }
 
 func TestRunSprayDebugDupesShowsCanonicalMappings(t *testing.T) {

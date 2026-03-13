@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,26 @@ import (
 type duplicateUsername struct {
 	Duplicate string
 	Canonical string
+}
+
+func duplicateUsernameList(entries []duplicateUsername) []string {
+	seen := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		key := strings.ToLower(entry.Canonical)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = entry.Canonical
+	}
+
+	users := make([]string, 0, len(seen))
+	for _, user := range seen {
+		users = append(users, user)
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return strings.ToLower(users[i]) < strings.ToLower(users[j])
+	})
+	return users
 }
 
 func runSpray(cfg appConfig, stdout, stderr io.Writer) int {
@@ -83,7 +104,8 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	var stateMu sync.Mutex
 	var outputMu sync.Mutex
 	var validUsers []string
-	var attemptCount atomic.Int64
+	var startedCount atomic.Int64
+	var completedCount atomic.Int64
 	var opErrorCount atomic.Int64
 	totalUsers := int64(len(users))
 	workCh := make(chan string, cfg.Workers*2)
@@ -101,12 +123,14 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 				return
 			}
 
-			count := attemptCount.Add(1)
+			started := startedCount.Add(1)
+			completed := completedCount.Load()
+			running := started - completed
 			stateMu.Lock()
 			hits := len(validUsers)
 			stateMu.Unlock()
 			outputMu.Lock()
-			fmt.Fprintf(stderr, "\r[*] [%d/%d] Trying: %-40s (valid: %d)", count, totalUsers, username, hits)
+			fmt.Fprint(stderr, formatAttemptProgress(completed, totalUsers, running, username, hits))
 			outputMu.Unlock()
 
 			result, authErr := testAuth(username)
@@ -126,6 +150,7 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 				fmt.Fprintf(stderr, "[!] ERROR: %s — %v\n", username, authErr)
 				outputMu.Unlock()
 			}
+			completedCount.Add(1)
 		}
 	}
 
@@ -146,9 +171,15 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 
 	outputMu.Lock()
 	clearProgress()
-	fmt.Fprintf(stderr, "[*] Spray complete: %d/%d valid credentials\n", validCount, len(users))
+	fmt.Fprintf(stderr, "[*] Spray complete: attempted %d, valid: %d\n", len(users), validCount)
 	if count := opErrorCount.Load(); count > 0 {
 		fmt.Fprintf(stderr, "[!] Spray encountered %d operational errors\n", count)
+	}
+	if duplicates := duplicateUsernameList(duplicateEntries); len(duplicates) > 0 {
+		fmt.Fprintf(stderr, "[*] Duplicate usernames skipped (%d unique):\n", len(duplicates))
+		for _, user := range duplicates {
+			fmt.Fprintf(stderr, "[*]   %s\n", user)
+		}
 	}
 	outputMu.Unlock()
 

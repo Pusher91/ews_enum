@@ -40,7 +40,7 @@ Spray a single password against a list of users:
 ews_enum -url https://mail.target.com/EWS/Exchange.asmx -userfile users.txt -pass 'P@ssword' -o hits.csv
 ```
 
-The user file should contain one username per line. Blank lines and `#` comments are skipped.
+The user file should contain one username per line. Blank lines and `#` comments are skipped. If duplicate usernames are present, only the first attempt is used and a unique list of skipped duplicate usernames is printed after the run completes.
 
 ### Credential Guessing
 
@@ -50,7 +50,7 @@ Try a file of `username:password` guesses, attempting only the first credential 
 ews_enum -url https://mail.target.com/EWS/Exchange.asmx -credfile guesses.txt -o hits.json -format json
 ```
 
-The credential file should contain one `username:password` pair per line. Blank lines and `#` comments are skipped. The parser splits on the first `:` only, trims the username, and preserves the rest of the line as the password verbatim, including additional `:` characters or surrounding spaces. An empty password is represented as `username:`. If the same username appears multiple times, only the first pair is attempted and each later duplicate is logged to stderr as skipped.
+The credential file should contain one `username:password` pair per line. Blank lines and `#` comments are skipped. The parser splits on the first `:` only, trims the username, and preserves the rest of the line as the password verbatim, including additional `:` characters or surrounding spaces. An empty password is represented as `username:`. If the same username appears multiple times, only the first pair is attempted, and after the run completes the tool prints the unique `username:password` combinations that were not attempted.
 
 ## Flags
 

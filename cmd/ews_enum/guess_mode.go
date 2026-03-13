@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,30 @@ type credentialAttempt struct {
 type duplicateCredentialAttempt struct {
 	Duplicate credentialAttempt
 	Canonical credentialAttempt
+}
+
+func skippedCredentialCombinations(entries []duplicateCredentialAttempt) []string {
+	seen := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Duplicate.User, entry.Canonical.User) && entry.Duplicate.Password == entry.Canonical.Password {
+			continue
+		}
+
+		key := strings.ToLower(entry.Duplicate.User) + "\x1f" + entry.Duplicate.Password
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = entry.Duplicate.User + ":" + entry.Duplicate.Password
+	}
+
+	combos := make([]string, 0, len(seen))
+	for _, combo := range seen {
+		combos = append(combos, combo)
+	}
+	sort.Slice(combos, func(i, j int) bool {
+		return strings.ToLower(combos[i]) < strings.ToLower(combos[j])
+	})
+	return combos
 }
 
 func runGuess(cfg appConfig, stdout, stderr io.Writer) int {
@@ -106,25 +131,13 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 	fmt.Fprintf(stderr, "[*] Unique usernames: %d, workers: %d, connections: %d\n", len(attempts), cfg.Workers, cfg.Conns)
 	if len(duplicates) > 0 {
 		fmt.Fprintf(stderr, "[!] Skipping %d duplicate username attempts from %s\n", len(duplicates), cfg.CredFile)
-		for _, dup := range duplicates {
-			fmt.Fprintf(
-				stderr,
-				"[!]   skipping line %d (%s:%s): username %s was already attempted on line %d (%s:%s)\n",
-				dup.Duplicate.Line,
-				dup.Duplicate.User,
-				dup.Duplicate.Password,
-				dup.Duplicate.User,
-				dup.Canonical.Line,
-				dup.Canonical.User,
-				dup.Canonical.Password,
-			)
-		}
 	}
 
 	var stateMu sync.Mutex
 	var outputMu sync.Mutex
 	validResults := make([]credentialResult, 0)
-	var attemptCount atomic.Int64
+	var startedCount atomic.Int64
+	var completedCount atomic.Int64
 	var opErrorCount atomic.Int64
 	totalAttempts := int64(len(attempts))
 	workCh := make(chan credentialAttempt, cfg.Workers*2)
@@ -142,12 +155,14 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 				return
 			}
 
-			count := attemptCount.Add(1)
+			started := startedCount.Add(1)
+			completed := completedCount.Load()
+			running := started - completed
 			stateMu.Lock()
 			hits := len(validResults)
 			stateMu.Unlock()
 			outputMu.Lock()
-			fmt.Fprintf(stderr, "\r[*] [%d/%d] Trying: %-40s (valid: %d)", count, totalAttempts, attempt.User, hits)
+			fmt.Fprint(stderr, formatAttemptProgress(completed, totalAttempts, running, attempt.User, hits))
 			outputMu.Unlock()
 
 			result, authErr := testAuth(attempt)
@@ -171,6 +186,7 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 				fmt.Fprintf(stderr, "[!] ERROR: %s — %v\n", attempt.User, authErr)
 				outputMu.Unlock()
 			}
+			completedCount.Add(1)
 		}
 	}
 
@@ -192,9 +208,15 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 
 	outputMu.Lock()
 	clearProgress()
-	fmt.Fprintf(stderr, "[*] Guessing complete: %d/%d valid credentials\n", validCount, len(attempts))
+	fmt.Fprintf(stderr, "[*] Guessing complete: attempted %d, valid: %d\n", len(attempts), validCount)
 	if count := opErrorCount.Load(); count > 0 {
 		fmt.Fprintf(stderr, "[!] Guessing encountered %d operational errors\n", count)
+	}
+	if combos := skippedCredentialCombinations(duplicates); len(combos) > 0 {
+		fmt.Fprintf(stderr, "[*] Unique credential combinations not attempted (%d):\n", len(combos))
+		for _, combo := range combos {
+			fmt.Fprintf(stderr, "[*]   %s\n", combo)
+		}
 	}
 	outputMu.Unlock()
 

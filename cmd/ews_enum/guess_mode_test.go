@@ -112,7 +112,7 @@ func TestRunGuessSkipsDuplicateUsernameAttemptsAndLogsThem(t *testing.T) {
 
 	cfg := appConfig{
 		URL:      "https://mail.example.com/EWS/Exchange.asmx",
-		CredFile: writeCredFile(t, "alice:one", "Alice:two", "bob:three", "alice:four"),
+		CredFile: writeCredFile(t, "alice:one", "Alice:two", "bob:three", "alice:four", "bob:three"),
 		Format:   "csv",
 		Workers:  2,
 		Conns:    1,
@@ -141,14 +141,20 @@ func TestRunGuessSkipsDuplicateUsernameAttemptsAndLogsThem(t *testing.T) {
 	}
 
 	errText := stderr.String()
-	if !strings.Contains(errText, "Skipping 2 duplicate username attempts") {
+	if !strings.Contains(errText, "Skipping 3 duplicate username attempts") {
 		t.Fatalf("stderr = %q, want duplicate summary", errText)
 	}
-	if !strings.Contains(errText, "Alice:two") || !strings.Contains(errText, "alice:one") {
-		t.Fatalf("stderr = %q, want Alice:two duplicate log", errText)
+	if !strings.Contains(errText, "Unique credential combinations not attempted (2):") {
+		t.Fatalf("stderr = %q, want skipped credential summary", errText)
 	}
-	if !strings.Contains(errText, "alice:four") || !strings.Contains(errText, "alice:one") {
-		t.Fatalf("stderr = %q, want alice:four duplicate log", errText)
+	if !strings.Contains(errText, "[*]   Alice:two") {
+		t.Fatalf("stderr = %q, want Alice:two in skipped credential list", errText)
+	}
+	if !strings.Contains(errText, "[*]   alice:four") {
+		t.Fatalf("stderr = %q, want alice:four in skipped credential list", errText)
+	}
+	if strings.Contains(errText, "[*]   bob:three") {
+		t.Fatalf("stderr = %q, did not want repeated attempted combo in skipped list", errText)
 	}
 }
 
