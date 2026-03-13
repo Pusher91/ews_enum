@@ -59,14 +59,68 @@ func TestParseConfigModesAndWarnings(t *testing.T) {
 func TestParseConfigRejectsInvalidValues(t *testing.T) {
 	t.Parallel()
 
-	_, _, _, err := parseConfig([]string{
-		"-url", "https://mail.example.com/EWS/Exchange.asmx",
-		"-user", "alice",
-		"-pass", "secret",
-		"-workers", "0",
-	})
-	if err == nil {
-		t.Fatal("expected validation error")
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "workers must be positive",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-workers", "0",
+			},
+		},
+		{
+			name: "timeout must be positive",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-timeout", "0",
+			},
+		},
+		{
+			name: "delay must be non-negative",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-delay", "-1000",
+			},
+		},
+		{
+			name: "spray rejects emails format",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-userfile", "users.txt",
+				"-pass", "secret",
+				"-format", "emails",
+			},
+		},
+		{
+			name: "enum rejects typo format",
+			args: []string{
+				"-url", "https://mail.example.com/EWS/Exchange.asmx",
+				"-user", "alice",
+				"-pass", "secret",
+				"-enum",
+				"-format", "jsno",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, _, err := parseConfig(tc.args)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 

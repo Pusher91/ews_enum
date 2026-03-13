@@ -54,15 +54,7 @@ func writeSprayResults(out io.Writer, format, password string, validUsers []stri
 	sort.Strings(validUsers)
 
 	switch format {
-	case "json":
-		results := make([]sprayResult, len(validUsers))
-		for i, user := range validUsers {
-			results[i] = sprayResult{User: user, Status: "valid"}
-		}
-		enc := json.NewEncoder(out)
-		enc.SetIndent("", "  ")
-		return enc.Encode(results)
-	default:
+	case "csv":
 		w := csv.NewWriter(out)
 		if err := w.Write([]string{"username", "password", "status"}); err != nil {
 			return err
@@ -74,6 +66,16 @@ func writeSprayResults(out io.Writer, format, password string, validUsers []stri
 		}
 		w.Flush()
 		return w.Error()
+	case "json":
+		results := make([]sprayResult, len(validUsers))
+		for i, user := range validUsers {
+			results[i] = sprayResult{User: user, Status: "valid"}
+		}
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(results)
+	default:
+		return fmt.Errorf("unsupported spray output format %q", format)
 	}
 }
 
@@ -83,20 +85,7 @@ func writeContacts(out io.Writer, format string, contacts []ews.Contact) error {
 	})
 
 	switch format {
-	case "json":
-		enc := json.NewEncoder(out)
-		enc.SetIndent("", "  ")
-		return enc.Encode(contacts)
-	case "emails":
-		for _, contact := range contacts {
-			if contact.EmailAddress != "" {
-				if _, err := fmt.Fprintln(out, contact.EmailAddress); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	default:
+	case "csv":
 		w := csv.NewWriter(out)
 		if err := w.Write([]string{"email", "display_name", "given_name", "surname", "title", "department", "office", "company", "phone"}); err != nil {
 			return err
@@ -118,6 +107,21 @@ func writeContacts(out io.Writer, format string, contacts []ews.Contact) error {
 		}
 		w.Flush()
 		return w.Error()
+	case "json":
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(contacts)
+	case "emails":
+		for _, contact := range contacts {
+			if contact.EmailAddress != "" {
+				if _, err := fmt.Fprintln(out, contact.EmailAddress); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported enum output format %q", format)
 	}
 }
 

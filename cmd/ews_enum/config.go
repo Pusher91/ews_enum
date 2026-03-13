@@ -54,11 +54,26 @@ func (c appConfig) Validate() error {
 		return fmt.Errorf("-workers must be at least 1")
 	case c.Conns < 1:
 		return fmt.Errorf("-conns must be at least 1")
+	case c.Timeout < 1:
+		return fmt.Errorf("-timeout must be at least 1")
+	case c.DelayMS < 0:
+		return fmt.Errorf("-delay must be at least 0")
 	case c.Depth < 1:
 		return fmt.Errorf("-depth must be at least 1")
-	default:
-		return nil
 	}
+
+	switch c.Mode() {
+	case modeSpray:
+		if c.Format != "csv" && c.Format != "json" {
+			return fmt.Errorf("invalid -format %q for spray mode (allowed: csv, json)", c.Format)
+		}
+	case modeEnum:
+		if c.Format != "csv" && c.Format != "json" && c.Format != "emails" {
+			return fmt.Errorf("invalid -format %q for enum mode (allowed: csv, json, emails)", c.Format)
+		}
+	}
+
+	return nil
 }
 
 func parseConfig(args []string) (appConfig, []string, string, error) {
@@ -74,9 +89,9 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	fs.StringVar(&cfg.Format, "format", "csv", "Output format: csv, json, emails (enum) or csv, json (spray)")
 	fs.StringVar(&cfg.OutFile, "o", "", "Output file (default: stdout)")
 	fs.BoolVar(&cfg.NTLM, "ntlm", true, "Use NTLM authentication (default true, set -ntlm=false for basic)")
-	fs.IntVar(&cfg.Timeout, "timeout", 30, "HTTP timeout in seconds")
+	fs.IntVar(&cfg.Timeout, "timeout", 30, "HTTP timeout in seconds (must be at least 1)")
 	fs.IntVar(&cfg.Depth, "depth", 3, "Max prefix depth for enumeration (2=aa, 3=aaa; values above 5 are capped)")
-	fs.IntVar(&cfg.DelayMS, "delay", 0, "Delay in milliseconds between requests")
+	fs.IntVar(&cfg.DelayMS, "delay", 0, "Delay in milliseconds between requests (must be at least 0)")
 	fs.IntVar(&cfg.Workers, "workers", 10, "Number of concurrent workers")
 	fs.IntVar(&cfg.Conns, "conns", 20, "Max concurrent connections to server")
 

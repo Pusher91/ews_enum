@@ -44,6 +44,24 @@ type enumFailure struct {
 	Cause    error
 }
 
+func contactKey(contact ews.Contact) string {
+	if contact.EmailAddress != "" {
+		return "email:" + strings.ToLower(contact.EmailAddress)
+	}
+
+	parts := []string{
+		strings.ToLower(contact.DisplayName),
+		strings.ToLower(contact.GivenName),
+		strings.ToLower(contact.Surname),
+		strings.ToLower(contact.Title),
+		strings.ToLower(contact.Department),
+		strings.ToLower(contact.Office),
+		strings.ToLower(contact.Company),
+		strings.ToLower(contact.Phone),
+	}
+	return "contact:" + strings.Join(parts, "\x1f")
+}
+
 func (e *enumFailure) Error() string {
 	switch e.Kind {
 	case ews.ErrorKindResolveDenied:
@@ -151,6 +169,8 @@ func enumerateGAL(client *http.Client, cfg appConfig, reporter enumReporter) (en
 	var failureMu sync.Mutex
 	var firstFailure error
 	var firstFailureKind ews.ErrorKind
+	var firstGenericFailure error
+	var firstGenericFailureKind ews.ErrorKind
 
 	abortThreshold := int64(cfg.Workers)
 	if abortThreshold > totalTopLevel {
@@ -168,15 +188,18 @@ func enumerateGAL(client *http.Client, cfg appConfig, reporter enumReporter) (en
 			return
 		}
 		failureMu.Lock()
-		defer failureMu.Unlock()
-		if firstFailure != nil {
-			return
-		}
 		if kind == ews.ErrorKindUnknown {
 			kind = ews.ErrorKindOf(err)
 		}
-		firstFailure = err
-		firstFailureKind = kind
+		if firstFailure == nil {
+			firstFailure = err
+			firstFailureKind = kind
+		}
+		if kind != ews.ErrorKindAuth && kind != ews.ErrorKindResolveDenied && firstGenericFailure == nil {
+			firstGenericFailure = err
+			firstGenericFailureKind = kind
+		}
+		failureMu.Unlock()
 	}
 
 	abort := func(kind ews.ErrorKind, cause error) {
@@ -268,10 +291,7 @@ func enumerateGAL(client *http.Client, cfg appConfig, reporter enumReporter) (en
 		var newContacts []ews.Contact
 		mu.Lock()
 		for _, contact := range contacts {
-			key := strings.ToLower(contact.EmailAddress)
-			if key == "" {
-				key = strings.ToLower(contact.DisplayName)
-			}
+			key := contactKey(contact)
 			if _, exists := seen[key]; !exists {
 				seen[key] = contact
 				newContacts = append(newContacts, contact)
@@ -379,6 +399,8 @@ seedTopLevel:
 	failureMu.Lock()
 	cause := firstFailure
 	causeKind := firstFailureKind
+	genericCause := firstGenericFailure
+	genericCauseKind := firstGenericFailureKind
 	failureMu.Unlock()
 
 	if kind := ews.ErrorKind(abortKind.Load()); kind != ews.ErrorKindUnknown {
@@ -389,21 +411,36 @@ seedTopLevel:
 		}
 	}
 
-	if !anySuccess.Load() && totalErrors.Load() > 0 {
+	if totalErrors.Load() > 0 {
 		total := totalErrors.Load()
 		var kind ews.ErrorKind
-		switch {
-		case authErrors.Load() == total:
-			kind = ews.ErrorKindAuth
-		case resolveDeniedErrors.Load() == total:
-			kind = ews.ErrorKindResolveDenied
-		default:
-			kind = classifyGenericFailure(causeKind)
+		finalCause := cause
+		if anySuccess.Load() {
+			if genericCause != nil {
+				finalCause = genericCause
+				kind = classifyGenericFailure(genericCauseKind)
+			} else {
+				kind = ews.ErrorKindServer
+			}
+		} else {
+			switch {
+			case authErrors.Load() == total:
+				kind = ews.ErrorKindAuth
+			case resolveDeniedErrors.Load() == total:
+				kind = ews.ErrorKindResolveDenied
+			default:
+				if genericCause != nil {
+					finalCause = genericCause
+					kind = classifyGenericFailure(genericCauseKind)
+				} else {
+					kind = classifyGenericFailure(causeKind)
+				}
+			}
 		}
 		return enumResult{Contacts: results, Requests: requestCount.Load()}, &enumFailure{
 			Kind:     kind,
 			Requests: requestCount.Load(),
-			Cause:    cause,
+			Cause:    finalCause,
 		}
 	}
 
