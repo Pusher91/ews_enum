@@ -169,7 +169,7 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 		if duplicates := duplicateUsernameList(duplicateEntries); len(duplicates) > 0 {
 			fmt.Fprintf(stderr, "[*] Duplicate usernames skipped (%d unique):\n", len(duplicates))
 			for _, user := range duplicates {
-				fmt.Fprintf(stderr, "    %s\n", user)
+				fmt.Fprintf(stderr, "%s\n", user)
 			}
 		}
 	outputMu.Unlock()

@@ -116,10 +116,10 @@ func TestRunSprayDedupesUserfileEntries(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Duplicate usernames skipped (2 unique):") {
 		t.Fatalf("stderr = %q, want duplicate username summary", stderr.String())
 	}
-		if !strings.Contains(stderr.String(), "    alice") {
+		if !strings.Contains(stderr.String(), "\nalice\n") {
 			t.Fatalf("stderr = %q, want alice in duplicate username list", stderr.String())
 		}
-		if !strings.Contains(stderr.String(), "    bob") {
+		if !strings.Contains(stderr.String(), "\nbob\n") {
 			t.Fatalf("stderr = %q, want bob in duplicate username list", stderr.String())
 		}
 	}

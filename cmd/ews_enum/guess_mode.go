@@ -215,7 +215,7 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 		if combos := skippedCredentialCombinations(duplicates); len(combos) > 0 {
 			fmt.Fprintf(stderr, "[*] Unique credential combinations not attempted (%d):\n", len(combos))
 			for _, combo := range combos {
-				fmt.Fprintf(stderr, "    %s\n", combo)
+				fmt.Fprintf(stderr, "%s\n", combo)
 			}
 		}
 	outputMu.Unlock()

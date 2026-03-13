@@ -132,6 +132,10 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	if err := fs.Parse(args); err != nil {
 		return cfg, nil, usage, err
 	}
+	setFlags := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		setFlags[f.Name] = true
+	})
 	if err := cfg.Validate(); err != nil {
 		return cfg, nil, usage, err
 	}
@@ -145,6 +149,12 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	}
 	if cfg.Mode() == modeGuess && cfg.Pass != "" {
 		warnings = append(warnings, "[!] -pass is ignored in guessing mode")
+	}
+	if cfg.Mode() == modeAuthCheck && setFlags["format"] {
+		warnings = append(warnings, "[!] -format is ignored in auth-check mode")
+	}
+	if cfg.Mode() == modeAuthCheck && setFlags["o"] {
+		warnings = append(warnings, "[!] -o is ignored in auth-check mode")
 	}
 	if cfg.DebugDupes {
 		warnings = append(warnings, "[!] -debug-dupes is deprecated and ignored; duplicate summaries are always printed")
