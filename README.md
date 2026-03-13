@@ -62,8 +62,8 @@ The credential file should contain one `username:password` pair per line. Blank 
 | `-credfile` | | File of `username:password` guesses (one per line, first username wins) |
 | `-pass` | | Password (required unless using `-credfile`) |
 | `-enum` | `false` | Enumerate the GAL after authenticating |
-| `-debug-dupes` | `false` | In spray mode, print duplicate usernames after trim/lowercase normalization |
-| `-format` | `csv` | Output format: `csv`, `json`, `emails` (enum only) |
+| `-debug-dupes` | `false` | Deprecated and ignored; duplicate summaries are always printed |
+| `-format` | `csv` | Spray/guess: `csv` or `json`. Enum: `csv`, `json`, or `emails` |
 | `-o` | stdout | Output file path |
 | `-ntlm` | `true` | Use NTLM auth (`false` for Basic) |
 | `-timeout` | `30` | HTTP timeout in seconds |
@@ -86,9 +86,6 @@ ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -user 'CORP\admin' -pass '
 
 # Spray with 5 workers and 1s minimum delay between request starts
 ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -userfile users.txt -pass 'Summer2026!' -workers 5 -delay 1000
-
-# Spray and show usernames collapsed as duplicates after normalization
-ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -userfile users.txt -pass 'Summer2026!' -debug-dupes
 
 # Guess from a username:password file; later duplicate usernames are logged and skipped
 ews_enum -url https://mail.corp.com/EWS/Exchange.asmx -credfile guesses.txt -format json -o guess_hits.json
@@ -114,3 +111,5 @@ CORP\jsmith,P@ssword,valid
 **Emails** (`-format emails`): one email address per line.
 
 **JSON** (`-format json`): array of contact or credential result objects.
+
+`-format` is only used by spray, guess, and enum modes. Auth-check mode prints status to stderr and ignores it.

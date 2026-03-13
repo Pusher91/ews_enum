@@ -212,12 +212,12 @@ func runGuessWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(c
 	if count := opErrorCount.Load(); count > 0 {
 		fmt.Fprintf(stderr, "[!] Guessing encountered %d operational errors\n", count)
 	}
-	if combos := skippedCredentialCombinations(duplicates); len(combos) > 0 {
-		fmt.Fprintf(stderr, "[*] Unique credential combinations not attempted (%d):\n", len(combos))
-		for _, combo := range combos {
-			fmt.Fprintf(stderr, "[*]   %s\n", combo)
+		if combos := skippedCredentialCombinations(duplicates); len(combos) > 0 {
+			fmt.Fprintf(stderr, "[*] Unique credential combinations not attempted (%d):\n", len(combos))
+			for _, combo := range combos {
+				fmt.Fprintf(stderr, "    %s\n", combo)
+			}
 		}
-	}
 	outputMu.Unlock()
 
 	if validCount == 0 {

@@ -90,15 +90,6 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	fmt.Fprintf(stderr, "[*] Users: %d, workers: %d, connections: %d\n", len(users), cfg.Workers, cfg.Conns)
 	if duplicates > 0 {
 		fmt.Fprintf(stderr, "[!] Skipping %d duplicate usernames from %s after trim/lowercase normalization\n", duplicates, cfg.UserFile)
-		if cfg.DebugDupes {
-			for _, dup := range duplicateEntries {
-				if dup.Duplicate == dup.Canonical {
-					fmt.Fprintf(stderr, "[!]   duplicate: %s\n", dup.Duplicate)
-					continue
-				}
-				fmt.Fprintf(stderr, "[!]   duplicate: %s -> %s\n", dup.Duplicate, dup.Canonical)
-			}
-		}
 	}
 
 	var stateMu sync.Mutex
@@ -175,12 +166,12 @@ func runSprayWithTester(cfg appConfig, stdout, stderr io.Writer, testAuth func(s
 	if count := opErrorCount.Load(); count > 0 {
 		fmt.Fprintf(stderr, "[!] Spray encountered %d operational errors\n", count)
 	}
-	if duplicates := duplicateUsernameList(duplicateEntries); len(duplicates) > 0 {
-		fmt.Fprintf(stderr, "[*] Duplicate usernames skipped (%d unique):\n", len(duplicates))
-		for _, user := range duplicates {
-			fmt.Fprintf(stderr, "[*]   %s\n", user)
+		if duplicates := duplicateUsernameList(duplicateEntries); len(duplicates) > 0 {
+			fmt.Fprintf(stderr, "[*] Duplicate usernames skipped (%d unique):\n", len(duplicates))
+			for _, user := range duplicates {
+				fmt.Fprintf(stderr, "    %s\n", user)
+			}
 		}
-	}
 	outputMu.Unlock()
 
 	if validCount == 0 {

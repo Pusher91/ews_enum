@@ -147,16 +147,16 @@ func TestRunGuessSkipsDuplicateUsernameAttemptsAndLogsThem(t *testing.T) {
 	if !strings.Contains(errText, "Unique credential combinations not attempted (2):") {
 		t.Fatalf("stderr = %q, want skipped credential summary", errText)
 	}
-	if !strings.Contains(errText, "[*]   Alice:two") {
-		t.Fatalf("stderr = %q, want Alice:two in skipped credential list", errText)
+		if !strings.Contains(errText, "    Alice:two") {
+			t.Fatalf("stderr = %q, want Alice:two in skipped credential list", errText)
+		}
+		if !strings.Contains(errText, "    alice:four") {
+			t.Fatalf("stderr = %q, want alice:four in skipped credential list", errText)
+		}
+		if strings.Contains(errText, "    bob:three") {
+			t.Fatalf("stderr = %q, did not want repeated attempted combo in skipped list", errText)
+		}
 	}
-	if !strings.Contains(errText, "[*]   alice:four") {
-		t.Fatalf("stderr = %q, want alice:four in skipped credential list", errText)
-	}
-	if strings.Contains(errText, "[*]   bob:three") {
-		t.Fatalf("stderr = %q, did not want repeated attempted combo in skipped list", errText)
-	}
-}
 
 func TestRunGuessWritesValidCredentialsAndReturnsOperationalError(t *testing.T) {
 	t.Parallel()

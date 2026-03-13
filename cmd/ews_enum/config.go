@@ -118,8 +118,8 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	fs.StringVar(&cfg.CredFile, "credfile", "", "File of username:password guesses (one per line, first username wins)")
 	fs.StringVar(&cfg.Pass, "pass", "", "Password (required unless using -credfile)")
 	fs.BoolVar(&cfg.EnumGAL, "enum", false, "Enumerate the Global Address List after authenticating")
-	fs.BoolVar(&cfg.DebugDupes, "debug-dupes", false, "In spray mode, print duplicate usernames after trim/lowercase normalization")
-	fs.StringVar(&cfg.Format, "format", "csv", "Output format: csv, json, emails (enum) or csv, json (spray)")
+	fs.BoolVar(&cfg.DebugDupes, "debug-dupes", false, "Deprecated; duplicate summaries are always printed")
+	fs.StringVar(&cfg.Format, "format", "csv", "Output format: spray/guess use csv or json; enum uses csv, json, or emails")
 	fs.StringVar(&cfg.OutFile, "o", "", "Output file (default: stdout)")
 	fs.BoolVar(&cfg.NTLM, "ntlm", true, "Use NTLM authentication (default true, set -ntlm=false for basic)")
 	fs.IntVar(&cfg.Timeout, "timeout", 30, "HTTP timeout in seconds (must be at least 1)")
@@ -145,6 +145,9 @@ func parseConfig(args []string) (appConfig, []string, string, error) {
 	}
 	if cfg.Mode() == modeGuess && cfg.Pass != "" {
 		warnings = append(warnings, "[!] -pass is ignored in guessing mode")
+	}
+	if cfg.DebugDupes {
+		warnings = append(warnings, "[!] -debug-dupes is deprecated and ignored; duplicate summaries are always printed")
 	}
 	if cfg.Mode() == modeEnum && cfg.Depth > maxEnumDepth {
 		warnings = append(warnings, fmt.Sprintf("[!] -depth %d is capped to %d", cfg.Depth, maxEnumDepth))

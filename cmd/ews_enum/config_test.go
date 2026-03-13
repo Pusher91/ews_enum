@@ -248,3 +248,28 @@ func TestParseConfigGuessModeWarnsThatPassIsIgnored(t *testing.T) {
 		t.Fatalf("warnings = %v, want ignored -pass warning", warnings)
 	}
 }
+
+func TestParseConfigWarnsThatDebugDupesIsDeprecated(t *testing.T) {
+	t.Parallel()
+
+	_, warnings, _, err := parseConfig([]string{
+		"-url", "https://mail.example.com/EWS/Exchange.asmx",
+		"-userfile", "users.txt",
+		"-pass", "secret",
+		"-debug-dupes",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig returned error: %v", err)
+	}
+
+	found := false
+	for _, warning := range warnings {
+		if warning == "[!] -debug-dupes is deprecated and ignored; duplicate summaries are always printed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v, want deprecated -debug-dupes warning", warnings)
+	}
+}
