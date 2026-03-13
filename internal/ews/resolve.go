@@ -41,14 +41,14 @@ type responseMessages struct {
 }
 
 type resolveNamesResponseMessage struct {
-	ResponseClass  string         `xml:"ResponseClass,attr"`
-	ResponseCode   string         `xml:"ResponseCode"`
-	ResolutionSet  resolutionSet  `xml:"ResolutionSet"`
+	ResponseClass string        `xml:"ResponseClass,attr"`
+	ResponseCode  string        `xml:"ResponseCode"`
+	ResolutionSet resolutionSet `xml:"ResolutionSet"`
 }
 
 type resolutionSet struct {
 	TotalItemsInView        int          `xml:"TotalItemsInView,attr"`
-	IncludesLastItemInRange  string       `xml:"IncludesLastItemInRange,attr"`
+	IncludesLastItemInRange string       `xml:"IncludesLastItemInRange,attr"`
 	Resolutions             []resolution `xml:"Resolution"`
 }
 
@@ -84,13 +84,32 @@ type phoneEntry struct {
 	Value string `xml:",chardata"`
 }
 
+func parseResolveNamesMessage(respBody []byte) (resolveNamesResponseMessage, bool, error) {
+	var env envelope
+	if err := xml.Unmarshal(respBody, &env); err != nil {
+		return resolveNamesResponseMessage{}, false, err
+	}
+
+	msg := env.Body.ResolveNamesResponse.ResponseMessages.ResolveNamesResponseMessage
+	if msg.ResponseClass == "" && msg.ResponseCode == "" {
+		return resolveNamesResponseMessage{}, false, nil
+	}
+
+	return msg, true, nil
+}
+
 // ResolveNames calls the EWS ResolveNames operation for the given prefix.
 func ResolveNames(client *http.Client, url, user, pass, prefix string) ([]Contact, bool, error) {
 	body := fmt.Sprintf(soapEnvelopeTemplate, xmlEscape(prefix))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBufferString(body))
 	if err != nil {
-		return nil, false, fmt.Errorf("creating request: %w", err)
+		return nil, false, &ResponseError{
+			Op:     "ResolveNames",
+			Kind:   ErrorKindTransport,
+			Detail: "creating request",
+			Cause:  err,
+		}
 	}
 
 	req.SetBasicAuth(user, pass)
@@ -98,37 +117,71 @@ func ResolveNames(client *http.Client, url, user, pass, prefix string) ([]Contac
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, false, fmt.Errorf("request failed: %w", err)
+		return nil, false, &ResponseError{
+			Op:     "ResolveNames",
+			Kind:   ErrorKindTransport,
+			Detail: "request failed",
+			Cause:  err,
+		}
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, false, fmt.Errorf("reading response: %w", err)
+		return nil, false, &ResponseError{
+			Op:     "ResolveNames",
+			Kind:   ErrorKindTransport,
+			Detail: "reading response",
+			Cause:  err,
+		}
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, false, fmt.Errorf("authentication failed (HTTP 401)")
+		return nil, false, &ResponseError{
+			Op:         "ResolveNames",
+			Kind:       ErrorKindAuth,
+			StatusCode: http.StatusUnauthorized,
+			Detail:     "authentication failed",
+		}
+	}
+
+	msg, recognized, parseErr := parseResolveNamesMessage(respBody)
+	if recognized {
+		if msg.ResponseCode == "ErrorNameResolutionNoResults" {
+			return nil, false, nil
+		}
+		if msg.ResponseClass == "Error" {
+			return nil, false, &ResponseError{
+				Op:   "ResolveNames",
+				Kind: classifyResponseCode(msg.ResponseCode),
+				Code: msg.ResponseCode,
+			}
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+		return nil, false, &ResponseError{
+			Op:         "ResolveNames",
+			Kind:       ErrorKindServer,
+			StatusCode: resp.StatusCode,
+			Detail:     truncate(string(respBody), 200),
+		}
 	}
 
-	var env envelope
-	if err := xml.Unmarshal(respBody, &env); err != nil {
-		return nil, false, fmt.Errorf("parsing XML: %w", err)
+	if parseErr != nil {
+		return nil, false, &ResponseError{
+			Op:     "ResolveNames",
+			Kind:   ErrorKindParse,
+			Detail: "parsing XML",
+			Cause:  parseErr,
+		}
 	}
-
-	msg := env.Body.ResolveNamesResponse.ResponseMessages.ResolveNamesResponseMessage
-
-	// "ErrorNameResolutionNoResults" is normal — no matches for this prefix
-	if msg.ResponseCode == "ErrorNameResolutionNoResults" {
-		return nil, false, nil
-	}
-
-	if msg.ResponseClass == "Error" {
-		return nil, false, fmt.Errorf("EWS error: %s", msg.ResponseCode)
+	if !recognized {
+		return nil, false, &ResponseError{
+			Op:     "ResolveNames",
+			Kind:   ErrorKindParse,
+			Detail: "unexpected EWS response",
+		}
 	}
 
 	var contacts []Contact

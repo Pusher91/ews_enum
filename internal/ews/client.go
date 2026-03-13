@@ -11,10 +11,10 @@ import (
 
 // ClientOpts configures the HTTP client behavior.
 type ClientOpts struct {
-	NTLM            bool
-	TimeoutSec      int
-	MaxConns        int
-	UseCookies      bool
+	NTLM             bool
+	TimeoutSec       int
+	MaxConns         int
+	UseCookies       bool
 	DisableKeepAlive bool // Force new TCP connection per request (needed for NTLM spray)
 }
 
@@ -24,10 +24,10 @@ func NewClient(opts ClientOpts) *http.Client {
 
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
-		MaxIdleConns:         opts.MaxConns,
-		MaxIdleConnsPerHost:  opts.MaxConns,
-		MaxConnsPerHost:      opts.MaxConns,
-		DisableKeepAlives:    opts.DisableKeepAlive,
+		MaxIdleConns:        opts.MaxConns,
+		MaxIdleConnsPerHost: opts.MaxConns,
+		MaxConnsPerHost:     opts.MaxConns,
+		DisableKeepAlives:   opts.DisableKeepAlive,
 	}
 
 	var rt http.RoundTripper = transport
